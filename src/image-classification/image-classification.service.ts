@@ -114,7 +114,7 @@ export class ImageClassificationService {
         const ys = labelTensor;
     
         await this.model.fit(xs, ys, {
-            epochs: 150,
+            epochs: 500,
             batchSize: 32,
             validationSplit: 0.2,
             callbacks: {

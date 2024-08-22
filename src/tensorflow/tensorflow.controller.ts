@@ -35,14 +35,11 @@ export class TensorflowController {
   @Post('train')
   async trainModelFahrenheitCelsius(
     @Body() body: { fahrenheitValues: number[], celsiusValues: number[] }
-  ): Promise<string> {
-    // Cargar o crear el modelo
-    await this.tensorflowService.loadOrCreateModel();
-
+  ){
     // Entrenar el modelo con los datos proporcionados
-    await this.tensorflowService.trainModel(body.fahrenheitValues, body.celsiusValues);
-
-    return 'Modelo entrenado y guardado exitosamente.';
+    // return this.tensorflowService.trainModel(body.fahrenheitValues, body.celsiusValues);
+    // return this.tensorflowService.trainModelCNN(body.fahrenheitValues, body.celsiusValues);
+    return this.tensorflowService.trainModelDense(body.fahrenheitValues, body.celsiusValues);
   }
 
   @Post('train-imagenes-cats')
@@ -67,8 +64,7 @@ export class TensorflowController {
     }
 
     const imageBuffers = files.images.map(file => file.buffer);
-    // console.log({ files });  // Debería mostrar las imágenes recibidas
-    console.log({ labelArray }); // Debería mostrar las etiquetas recibidas
+  
     await this.imageClassificationService.trainModel(imageBuffers, labelArray);
 
     return 'Modelo entrenado correctamente';
@@ -79,7 +75,9 @@ export class TensorflowController {
   async predictCelsius(
     @Body() body: { fahrenheitValue: number }
   ) {
-    const celsiusValue = await this.tensorflowService.predictCelsius(body.fahrenheitValue);
+    // const celsiusValue = await this.tensorflowService.predictCelsius(body.fahrenheitValue);
+    // const celsiusValue = await this.tensorflowService.predictCelsiusCNN(body.fahrenheitValue);
+    const celsiusValue = await this.tensorflowService.predictCelsiusDense(body.fahrenheitValue);
     return { celsiusValue };
   }
 

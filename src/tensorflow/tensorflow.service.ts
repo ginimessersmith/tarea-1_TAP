@@ -15,6 +15,8 @@ export class TensorflowService {
 
   constructor() {
     // this.loadModel();
+    // this.createCNNModel();
+    this.createDenseModel();
   }
 
   // async loadModel() {
@@ -82,11 +84,10 @@ export class TensorflowService {
   // }
 
   async loadOrCreateModel(): Promise<void> {
-    // Asegurarte de que el directorio existe
     if (!fs.existsSync(this.modelDir)) {
       fs.mkdirSync(this.modelDir, { recursive: true });
       this.logger.log(`Directorio creado: ${this.modelDir}`);
-      this.createNewSequentialModel();
+      this.createDenseModel();  
       return;
     }
 
@@ -96,55 +97,87 @@ export class TensorflowService {
       this.logger.log(`Cargando el modelo desde: ${modelJsonPath}`);
       try {
         const loadedModel = await tf.loadLayersModel(`file://${modelJsonPath}`);
-        if (loadedModel instanceof tf.Sequential) {
-          this.model = loadedModel;
-          this.logger.log('Modelo secuencial cargado desde archivo.');
+        this.model = loadedModel as tf.Sequential;  // Asegúrate de que sea secuencial
 
-          // Compilar el modelo después de cargarlo
-          this.model.compile({
-            optimizer: 'sgd',
-            loss: 'meanSquaredError',
-          });
-        } else {
-          this.logger.error('El modelo cargado no es secuencial. Se creará un nuevo modelo secuencial.');
-          this.createNewSequentialModel();
-        }
+        this.model.compile({
+          optimizer: tf.train.sgd(0.0001),  // Tasa de aprendizaje para CNN
+          loss: 'meanSquaredError',
+        });
+        this.logger.log('Modelo CNN cargado desde archivo.');
       } catch (error) {
         this.logger.error(`Error al cargar el modelo: ${error}`);
-        this.createNewSequentialModel();
+        this.createDenseModel();  // Reemplaza la lógica secuencial con CNN
       }
     } else {
       this.logger.log('No se encontró un modelo existente. Creando uno nuevo.');
-      this.createNewSequentialModel();
+      this.createDenseModel();
+    }
+  }
+  // * -------------------------------------------------------------------------------------------
+  private createDenseModel(): void {
+    const model = tf.sequential();
+
+    model.add(tf.layers.dense({
+      inputShape: [1],
+      units: 1,
+      kernelInitializer: 'glorotUniform',  // Inicialización estándar
+      activation: 'linear'
+  }));
+
+    model.compile({
+      optimizer: tf.train.sgd(0.0001),
+      loss: 'meanSquaredError'
+    });
+
+    this.model = model;
+    this.logger.log('Nuevo modelo denso creado.');
+  }
+
+  async loadOrCreateModelDense(): Promise<void> {
+    if (!fs.existsSync(this.modelDir)) {
+      fs.mkdirSync(this.modelDir, { recursive: true });
+      this.logger.log(`Directorio creado: ${this.modelDir}`);
+      this.createDenseModel();  // Crea un nuevo modelo denso si no existe ninguno
+      return;
+    }
+
+    const modelJsonPath = path.resolve(this.modelDir, 'model.json');
+
+    if (fs.existsSync(modelJsonPath)) {
+      this.logger.log(`Cargando el modelo desde: ${modelJsonPath}`);
+      try {
+        const loadedModel = await tf.loadLayersModel(`file://${modelJsonPath}`);
+        this.model = loadedModel as tf.Sequential;
+
+        this.model.compile({
+          optimizer: tf.train.sgd(0.001),
+          loss: 'meanSquaredError',
+        });
+        this.logger.log('Modelo denso cargado desde archivo.');
+      } catch (error) {
+        this.logger.error(`Error al cargar el modelo: ${error}`);
+        this.createDenseModel();  // Crea un nuevo modelo si hay un error al cargar
+      }
+    } else {
+      this.logger.log('No se encontró un modelo existente. Creando uno nuevo.');
+      this.createDenseModel();
     }
   }
 
-  private createNewSequentialModel(): void {
-     this.model = tf.sequential();
-    this.model.add(tf.layers.dense({ inputShape: [1], units: 1 }));
-  
-    this.model.compile({
-      optimizer: tf.train.sgd(0.001),  // Tasa de aprendizaje aún más baja
-      loss: 'meanSquaredError',
-    });
-    this.logger.log('Nuevo modelo secuencial creado.');
-  }
-
-  async trainModel(fahrenheitValues: number[], celsiusValues: number[]): Promise<void> {
+  async trainModelDense(fahrenheitValues: number[], celsiusValues: number[]): Promise<void> {
     if (!fs.existsSync(this.modelDir)) {
       fs.mkdirSync(this.modelDir, { recursive: true });
       this.logger.log(`Directorio creado para guardar el modelo: ${this.modelDir}`);
     }
   
-    // Verificar los datos antes de crear tensores
     if (fahrenheitValues.some(v => v == null || isNaN(v)) || celsiusValues.some(v => v == null || isNaN(v))) {
       throw new Error('Los datos de entrenamiento contienen valores no válidos.');
     }
   
+    // Normalización
     const fahrenheitTensor = tf.tensor1d(fahrenheitValues).div(tf.scalar(100));
     const celsiusTensor = tf.tensor1d(celsiusValues).div(tf.scalar(100));
   
-    // Imprimir los pesos antes del entrenamiento
     this.logger.log('Pesos antes del entrenamiento:');
     this.model.layers.forEach(layer => {
       const weights = layer.getWeights();
@@ -162,7 +195,6 @@ export class TensorflowService {
       },
     });
   
-    // Imprimir los pesos después del entrenamiento
     this.logger.log('Pesos después del entrenamiento:');
     this.model.layers.forEach(layer => {
       const weights = layer.getWeights();
@@ -175,24 +207,25 @@ export class TensorflowService {
     this.logger.log('Modelo guardado correctamente.');
   }
 
-  async predictCelsius(fahrenheitValue: number) {
+  async predictCelsiusDense(fahrenheitValue: number) {
     if (!this.model) {
       await this.loadOrCreateModel();
     }
-
-    // Normalizar el valor de entrada durante la predicción
+  
+    // Normalización del valor de entrada
     const fahrenheitTensor = tf.tensor1d([fahrenheitValue]).div(tf.scalar(100));
-
-    // Realiza la predicción
+  
     const celsiusTensor = this.model.predict(fahrenheitTensor) as tf.Tensor;
-    const celsiusArray = await celsiusTensor.array() as number[][];
-    const celsiusValue = celsiusArray.length && celsiusArray[0].length ? celsiusArray[0][0] : null;
-
-    // Desnormalizar el resultado
-    const desnormalizedCelsiusValue = celsiusValue !== null ? celsiusValue * 100 : null;
-
-    this.logger.log(`Valor Celsius predicho: ${desnormalizedCelsiusValue}`);
-
-    return desnormalizedCelsiusValue;
+    const celsiusArray = await celsiusTensor.array() as number[];
+    let celsiusValue = celsiusArray.length ? celsiusArray[0] : null;
+  
+    // Desnormalización del valor de salida
+    if (celsiusValue !== null) {
+      celsiusValue = celsiusValue * 100;
+    }
+  
+    this.logger.log(`Valor Celsius predicho: ${celsiusValue}`);
+  
+    return celsiusValue;
   }
 }
